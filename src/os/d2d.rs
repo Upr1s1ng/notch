@@ -2,7 +2,8 @@ use windows::core::HSTRING;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Direct2D::Common::{
     D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_BEZIER_SEGMENT, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED,
-    D2D1_FIGURE_END_CLOSED, D2D1_GRADIENT_STOP, D2D1_PIXEL_FORMAT, D2D_RECT_F, D2D_SIZE_U,
+    D2D1_FIGURE_BEGIN_HOLLOW, D2D1_FIGURE_END_CLOSED, D2D1_FIGURE_END_OPEN, D2D1_GRADIENT_STOP,
+    D2D1_PIXEL_FORMAT, D2D_RECT_F, D2D_SIZE_F, D2D_SIZE_U,
 };
 use windows_numerics::Vector2;
 
@@ -11,10 +12,11 @@ fn pt(x: f32, y: f32) -> Vector2 {
 }
 use windows::Win32::Graphics::Direct2D::{
     D2D1CreateFactory, ID2D1Factory, ID2D1HwndRenderTarget, ID2D1LinearGradientBrush,
-    ID2D1PathGeometry, ID2D1SolidColorBrush, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
-    D2D1_EXTEND_MODE_CLAMP, D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_GAMMA_2_2,
-    D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES,
-    D2D1_PRESENT_OPTIONS_NONE, D2D1_RENDER_TARGET_PROPERTIES, D2D1_ROUNDED_RECT,
+    ID2D1PathGeometry, ID2D1SolidColorBrush, D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_LARGE,
+    D2D1_ARC_SIZE_SMALL, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, D2D1_EXTEND_MODE_CLAMP,
+    D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_GAMMA_2_2, D2D1_HWND_RENDER_TARGET_PROPERTIES,
+    D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES, D2D1_PRESENT_OPTIONS_NONE,
+    D2D1_RENDER_TARGET_PROPERTIES, D2D1_ROUNDED_RECT, D2D1_SWEEP_DIRECTION_CLOCKWISE,
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED,
@@ -304,6 +306,113 @@ impl D2dRenderer {
             unsafe {
                 self.target
                     .DrawLine(pt(x1, y1), pt(x2, y2), &b, stroke, None);
+            }
+        }
+    }
+
+    pub fn draw_arc_ring(
+        &self,
+        cx: f32,
+        cy: f32,
+        r: f32,
+        start_deg: f32,
+        sweep_deg: f32,
+        color: D2D1_COLOR_F,
+        stroke: f32,
+    ) {
+        let sweep = sweep_deg.clamp(0.0, 360.0);
+        if sweep < 0.5 || r <= 0.5 {
+            return;
+        }
+        if sweep >= 359.5 {
+            self.draw_circle(cx, cy, r, color, stroke);
+            return;
+        }
+        let Ok(path): windows::core::Result<ID2D1PathGeometry> =
+            (unsafe { self.factory.CreatePathGeometry() })
+        else {
+            return;
+        };
+        let Ok(sink) = (unsafe { path.Open() }) else {
+            return;
+        };
+        let a0 = start_deg.to_radians();
+        let a1 = (start_deg + sweep).to_radians();
+        let p0 = pt(cx + r * a0.cos(), cy + r * a0.sin());
+        let p1 = pt(cx + r * a1.cos(), cy + r * a1.sin());
+        let arc_size = if sweep > 180.0 {
+            D2D1_ARC_SIZE_LARGE
+        } else {
+            D2D1_ARC_SIZE_SMALL
+        };
+        unsafe {
+            sink.BeginFigure(p0, D2D1_FIGURE_BEGIN_HOLLOW);
+            sink.AddArc(&D2D1_ARC_SEGMENT {
+                point: p1,
+                size: D2D_SIZE_F {
+                    width: r,
+                    height: r,
+                },
+                rotationAngle: 0.0,
+                sweepDirection: D2D1_SWEEP_DIRECTION_CLOCKWISE,
+                arcSize: arc_size,
+            });
+            sink.EndFigure(D2D1_FIGURE_END_OPEN);
+            let _ = sink.Close();
+            if let Ok(b) = self.brush(color) {
+                self.target.DrawGeometry(&path, &b, stroke, None);
+            }
+        }
+    }
+
+    pub fn fill_triangle(
+        &self,
+        p1: (f32, f32),
+        p2: (f32, f32),
+        p3: (f32, f32),
+        color: D2D1_COLOR_F,
+    ) {
+        let Ok(path): windows::core::Result<ID2D1PathGeometry> =
+            (unsafe { self.factory.CreatePathGeometry() })
+        else {
+            return;
+        };
+        let Ok(sink) = (unsafe { path.Open() }) else {
+            return;
+        };
+        unsafe {
+            sink.BeginFigure(pt(p1.0, p1.1), D2D1_FIGURE_BEGIN_FILLED);
+            sink.AddLine(pt(p2.0, p2.1));
+            sink.AddLine(pt(p3.0, p3.1));
+            sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+            let _ = sink.Close();
+            if let Ok(b) = self.brush(color) {
+                self.target.FillGeometry(&path, &b, None);
+            }
+        }
+    }
+
+    pub fn draw_polyline(&self, pts: &[(f32, f32)], color: D2D1_COLOR_F, stroke: f32) {
+        if pts.len() < 2 {
+            return;
+        }
+        let Ok(path): windows::core::Result<ID2D1PathGeometry> =
+            (unsafe { self.factory.CreatePathGeometry() })
+        else {
+            return;
+        };
+        let Ok(sink) = (unsafe { path.Open() }) else {
+            return;
+        };
+        unsafe {
+            sink.BeginFigure(pt(pts[0].0, pts[0].1), D2D1_FIGURE_BEGIN_HOLLOW);
+            for &(x, y) in &pts[1..] {
+                sink.AddLine(pt(x, y));
+            }
+            sink.EndFigure(D2D1_FIGURE_END_OPEN);
+            let _ = sink.Close();
+            if let Ok(b) = self.brush(color) {
+                self.target.DrawGeometry(&path, &b, stroke, None);
             }
         }
     }
