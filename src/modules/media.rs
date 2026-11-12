@@ -72,7 +72,7 @@ impl SmtcController {
         let Ok(op) = GlobalSystemMediaTransportControlsSessionManager::RequestAsync() else {
             return Vec::new();
         };
-        let Ok(mgr) = op.get() else {
+        let Ok(mgr) = op.join() else {
             return Vec::new();
         };
         let Ok(list) = mgr.GetSessions() else {
@@ -125,7 +125,7 @@ impl SmtcController {
         };
 
         if let Ok(op) = session.TryGetMediaPropertiesAsync() {
-            if let Ok(props) = op.get() {
+            if let Ok(props) = op.join() {
                 snap.title = props.Title().map(|h| h.to_string()).unwrap_or_default();
                 snap.artist = props.Artist().map(|h| h.to_string()).unwrap_or_default();
                 snap.album = props
@@ -154,7 +154,7 @@ impl SmtcController {
     pub fn toggle_play_pause(&self) {
         if let Some((s, _)) = self.active_session() {
             if let Ok(op) = s.TryTogglePlayPauseAsync() {
-                let _ = op.get();
+                let _ = op.join();
                 return;
             }
         }
@@ -164,7 +164,7 @@ impl SmtcController {
     pub fn next_track(&self) {
         if let Some((s, _)) = self.active_session() {
             if let Ok(op) = s.TrySkipNextAsync() {
-                let _ = op.get();
+                let _ = op.join();
                 return;
             }
         }
@@ -174,7 +174,7 @@ impl SmtcController {
     pub fn prev_track(&self) {
         if let Some((s, _)) = self.active_session() {
             if let Ok(op) = s.TrySkipPreviousAsync() {
-                let _ = op.get();
+                let _ = op.join();
                 return;
             }
         }
@@ -185,7 +185,7 @@ impl SmtcController {
         if let Some((s, _)) = self.active_session() {
             let ticks = (secs.max(0.0) * 10_000_000.0) as i64;
             if let Ok(op) = s.TryChangePlaybackPositionAsync(ticks) {
-                let _ = op.get();
+                let _ = op.join();
             }
         }
         let _ = TimeSpan { Duration: 0 };

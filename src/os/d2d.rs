@@ -1,10 +1,14 @@
-use windows::core::{Interface, HSTRING};
-use windows::Win32::Foundation::{HWND, RECT};
+use windows::core::HSTRING;
+use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Direct2D::Common::{
     D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_BEZIER_SEGMENT, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED,
-    D2D1_FIGURE_END_CLOSED, D2D1_GRADIENT_STOP, D2D1_PIXEL_FORMAT, D2D_POINT_2F, D2D_RECT_F,
-    D2D_SIZE_U,
+    D2D1_FIGURE_END_CLOSED, D2D1_GRADIENT_STOP, D2D1_PIXEL_FORMAT, D2D_RECT_F, D2D_SIZE_U,
 };
+use windows_numerics::Vector2;
+
+fn pt(x: f32, y: f32) -> Vector2 {
+    Vector2 { X: x, Y: y }
+}
 use windows::Win32::Graphics::Direct2D::{
     D2D1CreateFactory, ID2D1Factory, ID2D1HwndRenderTarget, ID2D1LinearGradientBrush,
     ID2D1PathGeometry, ID2D1SolidColorBrush, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
@@ -153,8 +157,8 @@ impl D2dRenderer {
                 D2D1_EXTEND_MODE_CLAMP,
             )?;
             let props = D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES {
-                startPoint: D2D_POINT_2F { x: 0.0, y: y0 },
-                endPoint: D2D_POINT_2F { x: 0.0, y: y1 },
+                startPoint: pt(0.0, y0),
+                endPoint: pt(0.0, y1),
             };
             self.target.CreateLinearGradientBrush(&props, None, &coll)
         }
@@ -229,63 +233,33 @@ impl D2dRenderer {
         let ear = ear_r.min(h * 0.45).max(4.0);
         let br = bottom_r.min(w * 0.45).min(h * 0.85).max(4.0);
         unsafe {
-            sink.BeginFigure(D2D_POINT_2F { x: x - ear, y }, D2D1_FIGURE_BEGIN_FILLED);
+            sink.BeginFigure(pt(x - ear, y), D2D1_FIGURE_BEGIN_FILLED);
             // Left inverted ear curving down into left wall
             sink.AddBezier(&D2D1_BEZIER_SEGMENT {
-                point1: D2D_POINT_2F {
-                    x: x - ear * 0.2,
-                    y,
-                },
-                point2: D2D_POINT_2F {
-                    x,
-                    y: y + ear * 0.25,
-                },
-                point3: D2D_POINT_2F { x, y: y + ear },
+                point1: pt(x - ear * 0.2, y),
+                point2: pt(x, y + ear * 0.25),
+                point3: pt(x, y + ear),
             });
             // Left wall down to bottom-left corner
-            sink.AddLine(D2D_POINT_2F { x, y: y + h - br });
+            sink.AddLine(pt(x, y + h - br));
             sink.AddBezier(&D2D1_BEZIER_SEGMENT {
-                point1: D2D_POINT_2F { x, y: y + h },
-                point2: D2D_POINT_2F {
-                    x: x + br * 0.35,
-                    y: y + h,
-                },
-                point3: D2D_POINT_2F {
-                    x: x + br,
-                    y: y + h,
-                },
+                point1: pt(x, y + h),
+                point2: pt(x + br * 0.35, y + h),
+                point3: pt(x + br, y + h),
             });
             // Bottom edge
-            sink.AddLine(D2D_POINT_2F {
-                x: x + w - br,
-                y: y + h,
-            });
+            sink.AddLine(pt(x + w - br, y + h));
             sink.AddBezier(&D2D1_BEZIER_SEGMENT {
-                point1: D2D_POINT_2F {
-                    x: x + w - br * 0.35,
-                    y: y + h,
-                },
-                point2: D2D_POINT_2F { x: x + w, y: y + h },
-                point3: D2D_POINT_2F {
-                    x: x + w,
-                    y: y + h - br,
-                },
+                point1: pt(x + w - br * 0.35, y + h),
+                point2: pt(x + w, y + h),
+                point3: pt(x + w, y + h - br),
             });
             // Right wall up to right inverted ear
-            sink.AddLine(D2D_POINT_2F {
-                x: x + w,
-                y: y + ear,
-            });
+            sink.AddLine(pt(x + w, y + ear));
             sink.AddBezier(&D2D1_BEZIER_SEGMENT {
-                point1: D2D_POINT_2F {
-                    x: x + w,
-                    y: y + ear * 0.25,
-                },
-                point2: D2D_POINT_2F {
-                    x: x + w + ear * 0.2,
-                    y,
-                },
-                point3: D2D_POINT_2F { x: x + w + ear, y },
+                point1: pt(x + w, y + ear * 0.25),
+                point2: pt(x + w + ear * 0.2, y),
+                point3: pt(x + w + ear, y),
             });
             sink.EndFigure(D2D1_FIGURE_END_CLOSED);
             let _ = sink.Close();
@@ -302,7 +276,7 @@ impl D2dRenderer {
     pub fn fill_circle(&self, cx: f32, cy: f32, r: f32, color: D2D1_COLOR_F) {
         if let Ok(b) = self.brush(color) {
             let ell = windows::Win32::Graphics::Direct2D::D2D1_ELLIPSE {
-                point: D2D_POINT_2F { x: cx, y: cy },
+                point: pt(cx, cy),
                 radiusX: r,
                 radiusY: r,
             };
@@ -315,7 +289,7 @@ impl D2dRenderer {
     pub fn draw_circle(&self, cx: f32, cy: f32, r: f32, color: D2D1_COLOR_F, stroke: f32) {
         if let Ok(b) = self.brush(color) {
             let ell = windows::Win32::Graphics::Direct2D::D2D1_ELLIPSE {
-                point: D2D_POINT_2F { x: cx, y: cy },
+                point: pt(cx, cy),
                 radiusX: r,
                 radiusY: r,
             };
@@ -328,13 +302,8 @@ impl D2dRenderer {
     pub fn draw_line(&self, x1: f32, y1: f32, x2: f32, y2: f32, color: D2D1_COLOR_F, stroke: f32) {
         if let Ok(b) = self.brush(color) {
             unsafe {
-                self.target.DrawLine(
-                    D2D_POINT_2F { x: x1, y: y1 },
-                    D2D_POINT_2F { x: x2, y: y2 },
-                    &b,
-                    stroke,
-                    None,
-                );
+                self.target
+                    .DrawLine(pt(x1, y1), pt(x2, y2), &b, stroke, None);
             }
         }
     }
@@ -380,11 +349,4 @@ impl D2dRenderer {
             );
         }
     }
-}
-
-#[allow(dead_code)]
-fn _keep_imports() {
-    let _ = RECT::default();
-    let _ = D2D1_BITMAP_INTERPOLATION_MODE_LINEAR;
-    let _ = Interface::as_raw;
 }

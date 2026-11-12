@@ -47,8 +47,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SW_SHOWNOACTIVATE, TPM_BOTTOMALIGN, TPM_LEFTALIGN, WA_INACTIVE, WDA_EXCLUDEFROMCAPTURE,
     WDA_NONE, WINEVENT_OUTOFCONTEXT, WM_ACTIVATE, WM_APP, WM_CHAR, WM_CLIPBOARDUPDATE, WM_CLOSE,
     WM_COMMAND, WM_DESTROY, WM_DPICHANGED, WM_DROPFILES, WM_HOTKEY, WM_KEYDOWN, WM_KILLFOCUS,
-    WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_RBUTTONUP,
-    WM_TIMER, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_RBUTTONUP, WM_TIMER,
+    WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
     WS_EX_TRANSPARENT, WS_POPUP,
 };
 
@@ -164,7 +164,7 @@ impl NotchWindow {
 
             let bwc = WNDCLASSEXW {
                 cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
-                lpfnWndProc: Some(DefWindowProcW),
+                lpfnWndProc: Some(backdrop_wndproc),
                 hInstance: hinst.into(),
                 lpszClassName: backdrop_class,
                 ..Default::default()
@@ -909,6 +909,15 @@ fn toggle_autostart() {
         }
         let _ = RegCloseKey(key);
     }
+}
+
+unsafe extern "system" fn backdrop_wndproc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    DefWindowProcW(hwnd, msg, wparam, lparam)
 }
 
 unsafe extern "system" fn win_event_proc(
