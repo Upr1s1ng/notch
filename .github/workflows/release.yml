@@ -8,6 +8,10 @@ on:
       - "v*"
   workflow_dispatch:
 
+permissions:
+  contents: write
+  issues: write
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -20,7 +24,22 @@ jobs:
           targets: x86_64-pc-windows-msvc
 
       - name: Build release binary
-        run: cargo build --release --target x86_64-pc-windows-msvc
+        shell: pwsh
+        run: |
+          cargo build --release --target x86_64-pc-windows-msvc 2>&1 | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Report build errors if failed
+        if: failure()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if (Test-Path build.log) {
+            $tail = (Get-Content build.log -Tail 80) -join "`n"
+            $body = "## CI Build Error`n``````text`n$tail`n``````"
+            gh issue create --title "CI Build Failure ($(git rev-parse --short HEAD))" --body $body
+          }
 
       - name: Optional Authenticode sign (if WINDOWS_CERT_PFX secret is set)
         shell: pwsh
