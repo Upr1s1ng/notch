@@ -597,7 +597,7 @@ fn draw_collapsed(
             2,
         );
     } else if data.media.is_playing {
-        let phase = sm.anim_clock;
+        let phase = data.media.live_position_secs() as f32;
         for i in 0..4 {
             let amp = 4.0 + ((phase * 5.2 + (i as f32) * 1.15).sin().abs()) * 11.0;
             let bx = x + w - 34.0 + (i as f32) * 4.6;
@@ -650,7 +650,8 @@ fn draw_collapsed(
 fn draw_mascot_eyes(d2d: &D2dRenderer, cx: f32, cy: f32, mood: MascotMood) {
     let offset = 7.5;
     match mood {
-        MascotMood::Sleepy => {
+        MascotMood::Clock => {}
+        MascotMood::Doze => {
             d2d.draw_arc_ring(cx - offset, cy - 1.0, 4.0, 15.0, 150.0, TEXT_MUTED, 1.6);
             d2d.draw_arc_ring(cx + offset, cy - 1.0, 4.0, 15.0, 150.0, TEXT_MUTED, 1.6);
         }
@@ -658,7 +659,7 @@ fn draw_mascot_eyes(d2d: &D2dRenderer, cx: f32, cy: f32, mood: MascotMood) {
             d2d.draw_line(cx - offset - 3.5, cy, cx - offset + 3.5, cy, SKY, 1.8);
             d2d.draw_line(cx + offset - 3.5, cy, cx + offset + 3.5, cy, SKY, 1.8);
         }
-        MascotMood::Happy => {
+        MascotMood::Wave => {
             d2d.draw_arc_ring(cx - offset, cy + 1.5, 4.2, 195.0, 150.0, EMERALD, 1.8);
             d2d.draw_arc_ring(cx + offset, cy + 1.5, 4.2, 195.0, 150.0, EMERALD, 1.8);
         }
@@ -680,7 +681,7 @@ fn draw_peek(
     h: f32,
     hits: &mut UiHitMap,
 ) {
-    if let Some(p) = &sm.active_peek {
+    if let Some(p) = &sm.peek {
         let badge_col = match p.accent {
             0 => SKY,
             1 => EMERALD,
@@ -737,8 +738,8 @@ fn draw_expanded(
     // ------------------------------------------------------------------------
     let tabs = [
         (ExpandedTab::Home, "Home"),
-        (ExpandedTab::Music, "Music"),
-        (ExpandedTab::Hud, "HUD"),
+        (ExpandedTab::Media, "Music"),
+        (ExpandedTab::Audio, "HUD"),
         (ExpandedTab::Tasks, "Tasks"),
         (ExpandedTab::Timer, "Timer"),
         (ExpandedTab::Calendar, "Cal"),
@@ -760,7 +761,7 @@ fn draw_expanded(
             w: tab_w - 2.0,
             h: track_h - 6.0,
         };
-        let active = sm.tab == *tab;
+        let active = sm.active_tab == *tab;
         if active {
             d2d.fill_round_rect(r.x, r.y, r.w, r.h, 11.0, TAB_ACTIVE);
             d2d.draw_round_rect(r.x, r.y, r.w, r.h, 11.0, BORDER_SPECULAR, 0.8);
@@ -788,7 +789,7 @@ fn draw_expanded(
         pin_r.x + 12.0,
         pin_r.y + 12.0,
         12.0,
-        if sm.pinned {
+        if sm.pinned_open {
             rgba(96, 165, 250, 0.22)
         } else {
             TRACK_BG
@@ -799,8 +800,8 @@ fn draw_expanded(
         pin_r.x + 12.0,
         pin_r.y + 12.0,
         6.5,
-        if sm.pinned { SKY } else { TEXT_SECONDARY },
-        sm.pinned,
+        if sm.pinned_open { SKY } else { TEXT_SECONDARY },
+        sm.pinned_open,
     );
     hits.push(pin_r, UiAction::TogglePin);
 
@@ -820,14 +821,14 @@ fn draw_expanded(
     let bw = iw;
     let bh = (y + h - 14.0 - by).max(120.0);
 
-    match sm.tab {
+    match sm.active_tab {
         ExpandedTab::Home => {
             draw_home_tab(d2d, cfg, data, bx, by, bw, bh, hits);
         }
-        ExpandedTab::Music => {
-            draw_music_tab(d2d, sm, data, bx, by, bw, bh, hits);
+        ExpandedTab::Media => {
+            draw_music_tab(d2d, data, bx, by, bw, bh, hits);
         }
-        ExpandedTab::Hud => {
+        ExpandedTab::Audio => {
             draw_hud_tab(d2d, data, bx, by, bw, hits);
         }
         ExpandedTab::Tasks => {
@@ -1140,12 +1141,12 @@ fn draw_home_tab(
         (
             2u8,
             "Privacy",
-            if cfg.hide_from_capture {
+            if cfg.exclude_from_capture {
                 "Hidden"
             } else {
                 "Visible"
             },
-            cfg.hide_from_capture,
+            cfg.exclude_from_capture,
             UiAction::TogglePrivacy,
         ),
         (3u8, "Peek", "Test Alert", false, UiAction::TriggerPeekDemo),
@@ -1202,7 +1203,6 @@ fn draw_home_tab(
 
 fn draw_music_tab(
     d2d: &D2dRenderer,
-    sm: &NotchStateMachine,
     data: &ShellData<'_>,
     bx: f32,
     by: f32,
@@ -1432,7 +1432,7 @@ fn draw_music_tab(
                 },
                 1,
             );
-            hits.push(lr, UiAction::SeekLyric(line.time_ms));
+            hits.push(lr, UiAction::SeekLyric((line.time_secs * 1000.0) as u32));
         }
     } else if data.show_lyrics {
         d2d.fill_round_rect(bx, ly, bw, lh, 12.0, TRACK_BG);
@@ -1450,9 +1450,10 @@ fn draw_music_tab(
         d2d.fill_round_rect(bx, ly, bw, lh, 12.0, TRACK_BG);
         let bars = 24;
         let bar_sp = (bw - 32.0) / (bars as f32);
+        let phase = pos as f32;
         for i in 0..bars {
             let amp = if data.media.is_playing {
-                4.0 + ((sm.anim_clock * 4.8 + (i as f32) * 0.55).sin().abs()) * (lh - 16.0)
+                4.0 + ((phase * 4.8 + (i as f32) * 0.55).sin().abs()) * (lh - 16.0)
             } else {
                 4.0
             };
