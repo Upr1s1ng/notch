@@ -49,12 +49,15 @@ jobs:
         run: ./msix/pack-msix.ps1 -ExePath "target/x86_64-pc-windows-msvc/release/notch.exe"
 
       - name: Optional Authenticode Sign (PFX Certificate)
-        if: ${{ secrets.WINDOWS_CERT_PFX != '' }}
         shell: pwsh
         env:
           WINDOWS_CERT_PFX: ${{ secrets.WINDOWS_CERT_PFX }}
           WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
         run: |
+          if (-not $env:WINDOWS_CERT_PFX) {
+            Write-Host "Skipping Authenticode signing (no WINDOWS_CERT_PFX secret configured)."
+            exit 0
+          }
           $pfxPath = "$env:RUNNER_TEMP/cert.pfx"
           [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:WINDOWS_CERT_PFX))
           $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1 -ExpandProperty FullName
