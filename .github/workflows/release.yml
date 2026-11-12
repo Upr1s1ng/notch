@@ -1,0 +1,52 @@
+name: Release Windows Notch
+
+on:
+  push:
+    branches:
+      - "main"
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Build release binary
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Optional Authenticode sign (if WINDOWS_CERT_PFX secret is set)
+        shell: pwsh
+        env:
+          WINDOWS_CERT_PFX: ${{ secrets.WINDOWS_CERT_PFX }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          $exe = "target/x86_64-pc-windows-msvc/release/notch.exe"
+          if ($env:WINDOWS_CERT_PFX) {
+            $pfxPath = "$env:RUNNER_TEMP/cert.pfx"
+            [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:WINDOWS_CERT_PFX))
+            $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1 -ExpandProperty FullName
+            & $signtool sign /fd SHA256 /f $pfxPath /p $env:WINDOWS_CERT_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $exe
+            Remove-Item $pfxPath -Force
+          } else {
+            Write-Host "Skipping Authenticode signing (no WINDOWS_CERT_PFX secret configured)."
+          }
+
+      - name: Package MSIX (for Microsoft Store / sideload)
+        shell: pwsh
+        run: ./msix/pack-msix.ps1 -ExePath "target/x86_64-pc-windows-msvc/release/notch.exe"
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: notch-windows-x64
+          path: |
+            target/x86_64-pc-windows-msvc/release/notch.exe
+            dist/Notch_x64.msix

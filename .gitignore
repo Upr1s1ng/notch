@@ -1,0 +1,7 @@
+/target/
+/dist/
+/rust-wip/
+/__pycache__/
+*.pdb
+*.lnk
+.DS_Store
