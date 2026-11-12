@@ -44,42 +44,84 @@ jobs:
             gh issue create --title "CI Build Failure ($(git rev-parse --short HEAD))" --body $body
           }
 
-      - name: Package MSIX (Microsoft Store / Sideload)
+      - name: Stage release binary
         shell: pwsh
-        run: ./msix/pack-msix.ps1 -ExePath "target/x86_64-pc-windows-msvc/release/notch.exe"
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/sign_exe | Out-Null
+          Copy-Item "target/x86_64-pc-windows-msvc/release/notch.exe" "dist/sign_exe/notch.exe" -Force
 
-      - name: Optional Authenticode Sign (PFX Certificate)
+      - name: Azure Login (OIDC for Artifact Signing)
+        if: vars.AZURE_SIGNING_ENDPOINT != ''
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign notch.exe with Azure Artifact Signing
+        if: vars.AZURE_SIGNING_ENDPOINT != ''
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}/dist/sign_exe
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Optional Authenticode Sign notch.exe (PFX)
         shell: pwsh
         env:
           WINDOWS_CERT_PFX: ${{ secrets.WINDOWS_CERT_PFX }}
           WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
         run: |
-          if (-not $env:WINDOWS_CERT_PFX) {
-            Write-Host "Skipping Authenticode signing (no WINDOWS_CERT_PFX secret configured)."
-            exit 0
-          }
+          if (-not $env:WINDOWS_CERT_PFX) { exit 0 }
           $pfxPath = "$env:RUNNER_TEMP/cert.pfx"
           [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:WINDOWS_CERT_PFX))
           $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1 -ExpandProperty FullName
-          $targets = @(
-            "target/x86_64-pc-windows-msvc/release/notch.exe",
-            "dist/Notch_x64.msix"
-          )
-          foreach ($t in $targets) {
-            if (Test-Path $t) {
-              & $signtool sign /fd SHA256 /f $pfxPath /p $env:WINDOWS_CERT_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $t
-            }
-          }
+          & $signtool sign /fd SHA256 /f $pfxPath /p $env:WINDOWS_CERT_PASSWORD /tr http://timestamp.digicert.com /td SHA256 "dist/sign_exe/notch.exe"
+          Remove-Item $pfxPath -Force
+
+      - name: Package MSIX (Microsoft Store / Sideload)
+        shell: pwsh
+        run: ./msix/pack-msix.ps1 -ExePath "dist/sign_exe/notch.exe"
+
+      - name: Sign Notch_x64.msix with Azure Artifact Signing
+        if: vars.AZURE_SIGNING_ENDPOINT != ''
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}/dist
+          files-folder-filter: msix
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Optional Authenticode Sign Notch_x64.msix (PFX)
+        shell: pwsh
+        env:
+          WINDOWS_CERT_PFX: ${{ secrets.WINDOWS_CERT_PFX }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          if (-not $env:WINDOWS_CERT_PFX) { exit 0 }
+          $pfxPath = "$env:RUNNER_TEMP/cert.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:WINDOWS_CERT_PFX))
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1 -ExpandProperty FullName
+          & $signtool sign /fd SHA256 /f $pfxPath /p $env:WINDOWS_CERT_PASSWORD /tr http://timestamp.digicert.com /td SHA256 "dist/Notch_x64.msix"
           Remove-Item $pfxPath -Force
 
       - name: Prepare Release Bundle & SHA-256 Checksums
         shell: pwsh
         run: |
+          Copy-Item "dist/sign_exe/notch.exe" "dist/notch.exe" -Force
           New-Item -ItemType Directory -Force -Path dist/bundle | Out-Null
-          Copy-Item "target/x86_64-pc-windows-msvc/release/notch.exe" "dist/notch.exe" -Force
           Copy-Item "dist/notch.exe" "dist/bundle/notch.exe" -Force
           Compress-Archive -Path "dist/bundle/*" -DestinationPath "dist/notch-windows-x64.zip" -Force
-          Remove-Item -Recurse -Force dist/bundle
+          Remove-Item -Recurse -Force dist/bundle, dist/sign_exe
 
           $files = @("dist/notch.exe", "dist/Notch_x64.msix", "dist/notch-windows-x64.zip")
           $hashes = foreach ($f in $files) {

@@ -18,10 +18,26 @@ Every CI run in `.github/workflows/release.yml` builds `dist/Notch_x64.msix` usi
 
 ---
 
-## Option 2: Direct GitHub Release Signing (`WINDOWS_CERT_PFX`)
-To make `notch.exe` and `Notch_x64.msix` downloadable directly from GitHub Releases without SmartScreen/SAC prompts:
-1. Obtain a Windows Code Signing certificate (EV/OV `.pfx`, Azure Trusted Signing, or [SignPath.io](https://signpath.io/) for open-source projects).
-2. Encode the `.pfx` as base64 and add two repository secrets in **Settings → Secrets and variables → Actions**:
+## Option 2: Azure Artifact Signing (Recommended for Direct GitHub `.exe` / `.msix` Downloads)
+`.github/workflows/release.yml` is wired for **Azure Artifact Signing** (`azure/artifact-signing-action@v2` + OIDC):
+1. Create an **Artifact Signing** account, complete identity validation, and create a Public Trust certificate profile in the Azure Portal.
+2. Create an Entra ID App Registration with a **Federated Credential** for `Upr1s1ng/notch` (`main` branch and/or tags) and assign it the **Artifact Signing Certificate Profile Signer** role.
+3. In GitHub **Settings → Secrets and variables → Actions**:
+   - **Variables:**
+     - `AZURE_SIGNING_ENDPOINT` (e.g. `https://eus.codesigning.azure.net/`)
+     - `AZURE_SIGNING_ACCOUNT` (your Artifact Signing account name)
+     - `AZURE_SIGNING_PROFILE` (your certificate profile name)
+   - **Secrets:**
+     - `AZURE_CLIENT_ID`
+     - `AZURE_TENANT_ID`
+     - `AZURE_SUBSCRIPTION_ID`
+4. Push a version tag (`git tag v0.1.1 && git push origin v0.1.1`) — CI will sign both `notch.exe` and `Notch_x64.msix` automatically.
+
+---
+
+## Option 3: Direct PFX Certificate (`WINDOWS_CERT_PFX`)
+If you already have an EV/OV `.pfx` code-signing certificate:
+1. Encode the `.pfx` as base64 and add two repository **Secrets** in **Settings → Secrets and variables → Actions**:
    - `WINDOWS_CERT_PFX` — base64-encoded `.pfx` file
    - `WINDOWS_CERT_PASSWORD` — certificate password
-3. Push a version tag (`git tag v0.1.0 && git push origin v0.1.0`). CI will automatically sign both `notch.exe` and `Notch_x64.msix`, generate `SHA256SUMS.txt` + GitHub Build Provenance Attestations, and publish a GitHub Release.
+2. Push a version tag — CI will sign both `notch.exe` and `Notch_x64.msix` with `signtool.exe`.
