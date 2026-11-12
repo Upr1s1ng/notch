@@ -36,8 +36,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if (Test-Path build.log) {
-            $tail = (Get-Content build.log -Tail 80) -join "`n"
-            $body = "## CI Build Error`n``````text`n$tail`n``````"
+            $errs = (Get-Content build.log | Select-String -Pattern "^error" -Context 0,3) | Out-String
+            if (-not $errs.Trim()) { $errs = (Get-Content build.log -Tail 80) -join "`n" }
+            $body = "## CI Build Error`n``````text`n$($errs.Substring(0, [Math]::Min($errs.Length, 12000)))`n``````"
             gh issue create --title "CI Build Failure ($(git rev-parse --short HEAD))" --body $body
           }
 

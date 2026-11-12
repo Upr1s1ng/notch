@@ -47,10 +47,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SW_SHOWNOACTIVATE, TPM_BOTTOMALIGN, TPM_LEFTALIGN, WA_INACTIVE, WDA_EXCLUDEFROMCAPTURE,
     WDA_NONE, WINEVENT_OUTOFCONTEXT, WM_ACTIVATE, WM_APP, WM_CHAR, WM_CLIPBOARDUPDATE, WM_CLOSE,
     WM_COMMAND, WM_DESTROY, WM_DPICHANGED, WM_DROPFILES, WM_HOTKEY, WM_KEYDOWN, WM_KILLFOCUS,
-    WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSELEAVE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT,
-    WM_RBUTTONUP, WM_TIMER, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-    WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_RBUTTONUP,
+    WM_TIMER, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    WS_EX_TRANSPARENT, WS_POPUP,
 };
+
+const WM_MOUSELEAVE: u32 = 0x02A3;
 
 use crate::config::{AppConfig, NotchStyle, VisibilityMode};
 use crate::modules::audio::{AppAudioSession, AudioController};
@@ -1072,7 +1074,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 }
                 if w.timer.tick() {
                     let cfg = w.cfg.clone();
-                    w.sm.trigger_peek("Timer Done", w.timer.label.clone(), &cfg);
+                    let lbl = w.timer.label.clone();
+                    w.sm.trigger_peek("Timer Done", lbl, &cfg);
                     w.tick();
                 }
                 let (v, _) = w.audio.get_master_volume();
