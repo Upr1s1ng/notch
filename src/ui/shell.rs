@@ -682,12 +682,7 @@ fn draw_peek(
     hits: &mut UiHitMap,
 ) {
     if let Some(p) = &sm.peek {
-        let badge_col = match p.accent {
-            0 => SKY,
-            1 => EMERALD,
-            2 => AMBER,
-            _ => ROSE,
-        };
+        let badge_col = album_accent_color(&p.title);
         let bx = x + 22.0;
         let by = y + h * 0.5;
         d2d.fill_circle(bx, by, 14.0, rgba(255, 255, 255, 0.08));
